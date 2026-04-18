@@ -7,8 +7,11 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
-
+app.get("/", (req, res) => {
+  res.json({ message: "Reflect API is running!" });
+});
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
 
 // ─── SYSTEM PROMPT (this is where it goes) ────────────────────────────────────
 const systemPrompt = `You are a daily journaling assistant for the app "Reflect".
