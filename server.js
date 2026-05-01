@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import Groq from "groq-sdk";
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 dotenv.config();
 
 const app = express();
@@ -10,6 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ─── SYSTEM PROMPT (this is where it goes) ────────────────────────────────────
 const systemPrompt = `You are a daily journaling assistant for the app "Reflect".
@@ -400,47 +401,25 @@ app.post("/challenges", async (req, res) => {
 // ─── FEEDBACK ENDPOINT ───────────────────────────────────────────────────────
 // Paste this route into server.js before the health check
 app.post("/feedback", async (req, res) => {
-  const { category, message, userId, imageBase64 } = req.body;
+  const { category, message, userId } = req.body;
   if (!message) return res.status(400).json({ error: 'No message' });
- 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.FEEDBACK_EMAIL,
-      pass: process.env.FEEDBACK_EMAIL_PASS,
-    },
-  });
- 
-  const categoryLabels = {
-    bug: '🐛 Bug Report',
-    suggestion: '💡 Suggestion',
-    other: '💬 Other',
-  };
- 
-  const mailOptions = {
-    from: `"Reflect App" <${process.env.FEEDBACK_EMAIL}>`,
-    to: process.env.FEEDBACK_EMAIL,
-    subject: `[Reflect Feedback] ${categoryLabels[category] ?? category}`,
-    html: `
-      <div style="font-family:sans-serif;max-width:520px">
-        <h2 style="color:#7c3aed">${categoryLabels[category] ?? category}</h2>
-        <p style="color:#888;font-size:13px">User ID: ${userId}</p>
-        <div style="background:#f5f3ff;border-radius:12px;padding:16px;margin-top:12px">
-          <p style="margin:0;font-size:15px;line-height:1.6">${message.replace(/\n/g, '<br/>')}</p>
-        </div>
-        ${imageBase64 ? `<img src="data:image/jpeg;base64,${imageBase64}" style="margin-top:16px;width:100%;border-radius:10px" />` : ''}
-      </div>
-    `,
-  };
- 
+
+  const categoryLabels = { bug: '🐛 Bug Report', suggestion: '💡 Suggestion', other: '💬 Other' };
+
   try {
-    await transporter.sendMail(mailOptions);
+    await resend.emails.send({
+      from: 'Reflect App <onboarding@resend.dev>',
+      to: process.env.FEEDBACK_EMAIL,
+      subject: `[Reflect Feedback] ${categoryLabels[category] ?? category}`,
+      html: `<h2>${categoryLabels[category]}</h2><p>User: ${userId}</p><p>${message.replace(/\n/g, '<br/>')}</p>`,
+    });
     res.json({ ok: true });
   } catch (err) {
-    console.error('Feedback email error:', err.message, err.code, err.response);
-    res.status(500).json({ error: 'Failed to send' });
+    console.error('Feedback error:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
+ 
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
