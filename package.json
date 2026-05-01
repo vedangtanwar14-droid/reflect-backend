@@ -13,6 +13,7 @@
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
     "groq-sdk": "^1.1.2",
+    "nodemailer": "^8.0.7",
     "openai": "^4.0.0"
   }
 }
