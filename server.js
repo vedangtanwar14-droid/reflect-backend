@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import Groq from "groq-sdk";
+import nodemailer from 'nodemailer';
 dotenv.config();
 
 const app = express();
@@ -198,16 +199,18 @@ app.post("/notify-message", async (req, res) => {
   const { type, mode, entryCount, streak } = req.body;
 
   const prompt = type === "morning"
-    ? `You are Reflect, a daily journaling app. Write a single short morning message (1-2 sentences max) for someone on ${mode} mode with ${entryCount} journal entries and a ${streak}-day streak. Be direct, not cheesy. No emojis. Vary the tone — sometimes philosophical, sometimes blunt, sometimes quiet.`
-    : `You are Reflect, a daily journaling app. Write a single short evening reminder to log today's reflection (1-2 sentences max) for someone on ${mode} mode. They ${entryCount > 0 ? "have been journaling" : "are new"}. Be direct. No emojis. Don't be generic.`;
+    ? `You are Reflect. Write ONE sentence (max 12 words) as a morning thought for someone on ${mode} mode with a ${streak}-day streak. No emojis. Be direct.`
+    : `You are Reflect. Write ONE sentence (max 12 words) reminding someone to log their journal today. Mode: ${mode}. No emojis. Be direct.`;
 
   try {
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 80
+      max_tokens: 40
     });
-    res.json({ message: completion.choices[0].message.content.trim() });
+    const full = completion.choices[0].message.content.trim();
+    const message = type === "evening" ? full.split('.')[0].trim() + '.' : full;
+    res.json({ message });
   } catch (err) {
     console.error("Notify error:", err);
     res.json({ message: null });
@@ -391,6 +394,51 @@ app.post("/challenges", async (req, res) => {
   } catch (err) {
     console.error("Challenges error:", err);
     res.json({ weekly, monthly, wombiComment: null });
+  }
+});
+
+// ─── FEEDBACK ENDPOINT ───────────────────────────────────────────────────────
+// Paste this route into server.js before the health check
+app.post("/feedback", async (req, res) => {
+  const { category, message, userId, imageBase64 } = req.body;
+  if (!message) return res.status(400).json({ error: 'No message' });
+ 
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.FEEDBACK_EMAIL,
+      pass: process.env.FEEDBACK_EMAIL_PASS,
+    },
+  });
+ 
+  const categoryLabels = {
+    bug: '🐛 Bug Report',
+    suggestion: '💡 Suggestion',
+    other: '💬 Other',
+  };
+ 
+  const mailOptions = {
+    from: `"Reflect App" <${process.env.FEEDBACK_EMAIL}>`,
+    to: process.env.FEEDBACK_EMAIL,
+    subject: `[Reflect Feedback] ${categoryLabels[category] ?? category}`,
+    html: `
+      <div style="font-family:sans-serif;max-width:520px">
+        <h2 style="color:#7c3aed">${categoryLabels[category] ?? category}</h2>
+        <p style="color:#888;font-size:13px">User ID: ${userId}</p>
+        <div style="background:#f5f3ff;border-radius:12px;padding:16px;margin-top:12px">
+          <p style="margin:0;font-size:15px;line-height:1.6">${message.replace(/\n/g, '<br/>')}</p>
+        </div>
+        ${imageBase64 ? `<img src="data:image/jpeg;base64,${imageBase64}" style="margin-top:16px;width:100%;border-radius:10px" />` : ''}
+      </div>
+    `,
+  };
+ 
+  try {
+    await transporter.sendMail(mailOptions);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Feedback email error:', err.message, err.code, err.response);
+    res.status(500).json({ error: 'Failed to send' });
   }
 });
 
